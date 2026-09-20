@@ -32,13 +32,16 @@ jobs:
         run: |
           while read -r tag; do
             [ -z "$tag" ] && continue
-            if ! GH_TOKEN="$SRC_PAT" gh release view "$tag" -R "${{ env.SRC }}" >/dev/null 2>&1; then
+            echo "== 处理 $tag"
+            # 目标仓库没有该 release 才创建
+            if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$tag" --notes "自动镜像自 ${{ env.SRC }}"
             fi
-            GH_TOKEN="$SRC_PAT" gh release download "$tag" -R "${{ env.SRC }}" -D /tmp/rel || continue
+            GH_TOKEN="$SRC_PAT" gh release download "$tag" -R "${{ env.SRC }}" -D /tmp/rel || { echo "下载失败 $tag"; rm -rf /tmp/rel; continue; }
             for f in /tmp/rel/*; do
               [ -e "$f" ] || continue
               gh release upload "$tag" -R "$GITHUB_REPOSITORY" "$f" --clobber
             done
             rm -rf /tmp/rel
           done < /tmp/tags.txt
+          exit 0
