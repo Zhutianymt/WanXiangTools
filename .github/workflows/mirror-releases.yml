@@ -1,0 +1,43 @@
+name: Mirror Releases
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # 每 6 小时同步一次
+  workflow_dispatch:        # 也支持手动触发
+
+env:
+  SRC: Zhutianymt/Automated-O-M-Tools
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SRC_PAT: ${{ secrets.MIRROR_PAT }}
+    steps:
+      - name: 检查 MIRROR_PAT 是否已配置
+        run: |
+          if [ -z "$SRC_PAT" ]; then
+            echo "::error::请在仓库 Settings -> Secrets and variables -> Actions 添加 MIRROR_PAT（源私有仓库读取权限的 PAT）"
+            exit 1
+          fi
+
+      - name: 列出源 Release 的 tag
+        run: |
+          GH_TOKEN="$SRC_PAT" gh release list -R "${{ env.SRC }}" --json tagName -q '.[].tagName' > /tmp/tags.txt
+
+      - name: 增量同步 Release 与资产
+        run: |
+          while read -r tag; do
+            [ -z "$tag" ] && continue
+            if ! GH_TOKEN="$SRC_PAT" gh release view "$tag" -R "${{ env.SRC }}" >/dev/null 2>&1; then
+              gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$tag" --notes "自动镜像自 ${{ env.SRC }}"
+            fi
+            GH_TOKEN="$SRC_PAT" gh release download "$tag" -R "${{ env.SRC }}" -D /tmp/rel || continue
+            for f in /tmp/rel/*; do
+              [ -e "$f" ] || continue
+              gh release upload "$tag" -R "$GITHUB_REPOSITORY" "$f" --clobber
+            done
+            rm -rf /tmp/rel
+          done < /tmp/tags.txt
