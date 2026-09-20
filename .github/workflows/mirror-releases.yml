@@ -17,6 +17,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       SRC_PAT: ${{ secrets.MIRROR_PAT }}
     steps:
+      - name: 检出目标仓库
+        uses: actions/checkout@v4
+
       - name: 检查 MIRROR_PAT 是否已配置
         run: |
           if [ -z "$SRC_PAT" ]; then
@@ -24,18 +27,45 @@ jobs:
             exit 1
           fi
 
-      - name: 列出源 Release 的 tag
+      - name: 同步 CHANGELOG.md 文件本体
         run: |
-          GH_TOKEN="$SRC_PAT" gh release list -R "${{ env.SRC }}" --json tagName -q '.[].tagName' > /tmp/tags.txt
+          # 从源仓库拉取 CHANGELOG.md 原始内容，覆盖目标仓库根目录同名文件
+          GH_TOKEN="$SRC_PAT" gh api "repos/${{ env.SRC }}/contents/CHANGELOG.md" -H "Accept: application/vnd.github.raw" > CHANGELOG.md
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md 无变化，跳过提交"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md
+            git commit -m "sync CHANGELOG.md from ${{ env.SRC }}"
+            git push
+            echo "CHANGELOG.md 已同步"
+          fi
+
+      - name: 列出源 Release 的 tag（仅最新 300 个）
+        run: |
+          GH_TOKEN="$SRC_PAT" gh release list -R "${{ env.SRC }}" --limit 300 --json tagName -q '.[].tagName' > /tmp/src_tags.txt
+          wc -l < /tmp/src_tags.txt | xargs echo "源 release 数量:"
 
       - name: 增量同步 Release 与资产
         run: |
           while read -r tag; do
             [ -z "$tag" ] && continue
             echo "== 处理 $tag"
-            # 目标仓库没有该 release 才创建
+            # 拉取源 release 的修改日志（body），同步给目标
+            GH_TOKEN="$SRC_PAT" gh release view "$tag" -R "${{ env.SRC }}" --json body -q .body > /tmp/notes.txt || true
             if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$tag" --notes "自动镜像自 ${{ env.SRC }}"
+              # 目标没有该 release：创建并带上源日志
+              if [ -s /tmp/notes.txt ]; then
+                gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$tag" --notes-file /tmp/notes.txt
+              else
+                gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$tag" --notes "自动镜像自 ${{ env.SRC }}"
+              fi
+            else
+              # 目标已有：同步最新修改日志（保持与源一致）
+              if [ -s /tmp/notes.txt ]; then
+                gh release edit "$tag" -R "$GITHUB_REPOSITORY" --notes-file /tmp/notes.txt || echo "更新日志失败 $tag"
+              fi
             fi
             GH_TOKEN="$SRC_PAT" gh release download "$tag" -R "${{ env.SRC }}" -D /tmp/rel || { echo "下载失败 $tag"; rm -rf /tmp/rel; continue; }
             for f in /tmp/rel/*; do
@@ -43,5 +73,21 @@ jobs:
               gh release upload "$tag" -R "$GITHUB_REPOSITORY" "$f" --clobber
             done
             rm -rf /tmp/rel
-          done < /tmp/tags.txt
+          done < /tmp/src_tags.txt
+          exit 0
+
+      - name: 清理超出 300 上限的旧 Release
+        run: |
+          # 目标仓库当前 release 列表（最新优先）
+          gh release list -R "$GITHUB_REPOSITORY" --limit 400 --json tagName -q '.[].tagName' > /tmp/dst_tags.txt
+          # 找出"目标有但源最新 300 内没有"的 tag（更旧的镜像残留）
+          grep -vxFf /tmp/src_tags.txt /tmp/dst_tags.txt > /tmp/obsolete.txt || true
+          count=0
+          while read -r tag; do
+            [ -z "$tag" ] && continue
+            echo "删除多余 release: $tag"
+            gh release delete "$tag" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes || echo "删除失败 $tag"
+            count=$((count+1))
+          done < /tmp/obsolete.txt
+          echo "共清理 $count 个"
           exit 0

@@ -19,6 +19,7 @@
 
 ## 版本
 - **当前版本：3.0**
+- [查看历史修改日志](CHANGELOG.md)
 
 ## oracle_ic.7z 说明  
 - **用途**：内含 Oracle Instant Client 19c，程序运行时若同级存在 `oracle_ic.7z`，会自动解压到临时目录并初始化 `oracledb` thick 模式，从而支持 10g/11g 等旧版 Oracle 服务器。
