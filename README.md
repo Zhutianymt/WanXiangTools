@@ -20,13 +20,5 @@
 ## 版本
 - 当前版本：3.0
 
-## 发行包结构
-GitHub Actions 自动构建产出单文件 `万象工具.exe`，`oracle_ic.zip` 保持外置，二者同置于一个 zip 中发布：
-
-```
-万象工具-<版本>.zip
-├── 万象工具.exe       # PyInstaller --onefile 单文件，含 and all python deps
-└── oracle_ic.zip     # 运行时自动解压为 Oracle thick 模式 19c Instant Client
-```
-
-程序运行时若同级存在 `oracle_ic.zip`，会自动解压到临时目录并初始化 `oracledb` thick 模式，从而支持 10g/11g 等旧版 Oracle 服务器。
+## 注意实事项
+- 程序运行时若同级存在 `oracle_ic.zip`，会自动解压到临时目录并初始化 `oracledb` thick 模式，从而支持 10g/11g 等旧版 Oracle 服务器。
