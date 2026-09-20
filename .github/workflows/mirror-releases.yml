@@ -14,6 +14,7 @@ jobs:
     permissions:
       contents: write
     env:
+      GH_TOKEN: ${{ github.token }}
       SRC_PAT: ${{ secrets.MIRROR_PAT }}
     steps:
       - name: 检查 MIRROR_PAT 是否已配置
