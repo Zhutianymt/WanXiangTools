@@ -42,9 +42,9 @@ jobs:
             echo "CHANGELOG.md 已同步"
           fi
 
-      - name: 列出源 Release 的 tag（仅最新 300 个）
+      - name: 列出源 Release 的 tag（仅最新 5 个）
         run: |
-          GH_TOKEN="$SRC_PAT" gh release list -R "${{ env.SRC }}" --limit 300 --json tagName -q '.[].tagName' > /tmp/src_tags.txt
+          GH_TOKEN="$SRC_PAT" gh release list -R "${{ env.SRC }}" --limit 5 --json tagName -q '.[].tagName' > /tmp/src_tags.txt
           wc -l < /tmp/src_tags.txt | xargs echo "源 release 数量:"
 
       - name: 增量同步 Release 与资产
@@ -76,11 +76,11 @@ jobs:
           done < /tmp/src_tags.txt
           exit 0
 
-      - name: 清理超出 300 上限的旧 Release
+      - name: 清理超出 5 个上限的旧 Release
         run: |
           # 目标仓库当前 release 列表（最新优先）
           gh release list -R "$GITHUB_REPOSITORY" --limit 400 --json tagName -q '.[].tagName' > /tmp/dst_tags.txt
-          # 找出"目标有但源最新 300 内没有"的 tag（更旧的镜像残留）
+          # 找出"目标有但源最新 5 内没有"的 tag（更旧的镜像残留）
           grep -vxFf /tmp/src_tags.txt /tmp/dst_tags.txt > /tmp/obsolete.txt || true
           count=0
           while read -r tag; do
